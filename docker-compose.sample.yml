@@ -1,0 +1,29 @@
+services:
+  app:
+    image: ghcr.io/tekgnosis-net/pdf-rag-mcp:latest
+    env_file: .env
+    ports:
+      - "9001:8000"
+    volumes:
+      - data:/app/data
+    environment:
+      - EMBEDDING_DEVICE=${EMBEDDING_DEVICE:-cpu}
+      - TORCH_CUDA_INDEX_URL=${TORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+      - TORCH_CUDA_PACKAGES=${TORCH_CUDA_PACKAGES:-torch torchvision torchaudio}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    # GPU acceleration (requires NVIDIA Container Toolkit). Uncomment to enable.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: ${GPU_COUNT:-1}
+    #           capabilities: ["gpu"]
+
+volumes:
+  data:
