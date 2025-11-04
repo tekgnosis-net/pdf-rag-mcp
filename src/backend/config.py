@@ -31,6 +31,9 @@ class Settings:
     watch_dir: Path = field(default_factory=lambda: Path(os.getenv("WATCH_DIR", os.getenv("DATA_DIR", "data")) ) / "pdfs")
     watch_poll_interval: int = field(default_factory=lambda: int(os.getenv("WATCH_POLL_INTERVAL", "10")))
     max_process_attempts: int = field(default_factory=lambda: int(os.getenv("MAX_PROCESS_ATTEMPTS", "10")))
+    # Processing worker pool configuration
+    processor_workers: int = field(default_factory=lambda: int(os.getenv("PROCESS_WORKERS", "4")))
+    processor_queue_maxsize: int = field(default_factory=lambda: int(os.getenv("PROCESS_QUEUE_MAXSIZE", "100")))
 
     def ensure_directories(self) -> None:
         """Create expected data directories on disk."""

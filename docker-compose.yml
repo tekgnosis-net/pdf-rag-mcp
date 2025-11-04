@@ -5,7 +5,7 @@ services:
     ports:
       - "9001:8000"
     volumes:
-      - data:/app/data
+      - ./data:/app/data
     environment:
       - EMBEDDING_DEVICE=${EMBEDDING_DEVICE:-cpu}
       - TORCH_CUDA_INDEX_URL=${TORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu124}
@@ -25,5 +25,5 @@ services:
     #           count: ${GPU_COUNT:-1}
     #           capabilities: ["gpu"]
 
-volumes:
-  data:
+#volumes:
+#  data:

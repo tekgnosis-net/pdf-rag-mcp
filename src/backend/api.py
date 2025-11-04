@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import queue
 from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
@@ -14,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings
-from .processor import PDFProcessor
+from .processor import PDFProcessor, ProcessingTask
 from .mcp_server import create_mcp_router
 
 LOGGER = logging.getLogger(__name__)
@@ -81,18 +82,31 @@ class ProcessingManager:
         with self._lock:
             self._jobs[job_id] = job
 
-        background_tasks.add_task(self._process_job, job_id, destination, job.title)
+        task = ProcessingTask(
+            job_id=job_id,
+            source_path=destination,
+            title=job.title or destination.stem,
+            metadata={"ingest_source": "upload", "original_filename": file.filename},
+            on_start=lambda task: self._update_job(job_id, status=JobStatus.processing, progress=5.0),
+            on_progress=lambda task, progress, stage: self._update_job(job_id, status=JobStatus.processing, progress=progress),
+            on_success=lambda task, record: self._on_success(job_id, record),
+            on_error=lambda task, exc: self._on_failure(job_id, exc),
+        )
+        try:
+            self.processor.submit_task(task)
+        except queue.Full as exc:  # pragma: no cover - defensive, queue is blocking by default
+            LOGGER.error("Processing queue is full; cannot enqueue job %s", job_id)
+            raise HTTPException(status_code=503, detail="Processing queue is full, try again later") from exc
+
         LOGGER.info("Enqueued job %s for %s", job_id, file.filename)
         return job
 
-    def _process_job(self, job_id: str, path: Path, title: str) -> None:
-        self._update_job(job_id, status=JobStatus.processing, progress=5.0)
-        try:
-            record = self.processor.process_pdf(path, title=title)
-            self._update_job(job_id, status=JobStatus.completed, progress=100.0, document_id=record.id)
-        except Exception as exc:  # pragma: no cover - defensive diagnostic
-            LOGGER.exception("Job %s failed: %s", job_id, exc)
-            self._update_job(job_id, status=JobStatus.failed, progress=0.0, error=str(exc))
+    def _on_success(self, job_id: str, record) -> None:
+        self._update_job(job_id, status=JobStatus.completed, progress=100.0, document_id=record.id)
+
+    def _on_failure(self, job_id: str, exc: Exception) -> None:
+        LOGGER.exception("Job %s failed: %s", job_id, exc)
+        self._update_job(job_id, status=JobStatus.failed, progress=0.0, error=str(exc))
 
     def _update_job(
         self,
