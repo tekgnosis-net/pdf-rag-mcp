@@ -33,8 +33,8 @@ jobs:
         run: |
           pytest -q
 
-      - name: Setup Node
-        uses: stefanzweifel/setup-node@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 

@@ -25,7 +25,19 @@ class PyMuPDFParser(BasePDFParser):
         try:
             markdown_chunks = []
             for page in document:
-                markdown = page.get_text("markdown")
+                text_page = page.get_textpage()
+                markdown = ""
+                if hasattr(text_page, "extractMarkdown"):
+                    markdown = text_page.extractMarkdown() or ""
+                elif hasattr(text_page, "extract_markdown"):
+                    markdown = text_page.extract_markdown() or ""
+
+                if not markdown.strip() and hasattr(text_page, "extract_text"):
+                    markdown = text_page.extract_text() or ""
+
+                if not markdown.strip():
+                    markdown = page.get_text("text")
+
                 markdown_chunks.append(markdown.strip())
             LOGGER.debug("Extracted %d pages from %s", len(markdown_chunks), path)
             return "\n\n".join(chunk for chunk in markdown_chunks if chunk)
