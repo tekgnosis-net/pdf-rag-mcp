@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.backend.parsers.pymupdf_parser import PyMuPDFParser
+from src.backend.parsers.pymupdf_parser import PyMuPDFParser  # noqa: E402
 
 
 def test_pymupdf_parser_extracts_markdown(tmp_path: Path) -> None:
