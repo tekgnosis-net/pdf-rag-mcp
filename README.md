@@ -196,76 +196,279 @@ Mount `data/` as a volume if you want persistent storage across container restar
 | Symptom | Potential fix |
 | --- | --- |
 | PyMuPDF import errors | Ensure `pymupdf` compiled dependencies are installed (see Dockerfile for reference). |
-| Docling OCR pipeline issues | Confirm model downloads succeed and enough disk space is available. |
-| Empty search results | Verify embeddings are created (check logs) and the LanceDB store contains vectors (`data/vector_store`). |
-| OpenAI errors | Double-check `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and model name compatibility. |
+# PDF RAG MCP Server
+
+An opinionated reference implementation that ingests PDFs into a Retrieval Augmented Generation (RAG) knowledge base and exposes it through [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). The backend is powered by FastAPI, LanceDB, and SQLite; the frontend is a Vite + React dashboard for monitoring ingestion and running semantic search.
+
+## Highlights
+
+- Switchable PDF parsing backends (PyMuPDF or Docling).
+- Local or remote embedding pipelines with CPU/GPU support.
+- LanceDB vector store and SQLite document catalog.
+- Built-in directory watcher for drop-and-process workflows.
+- MCP HTTP transport and REST API in the same FastAPI app.
+- React/Chakra UI frontend for queue monitoring and search.
+
+## Table of contents
+
+1. [Quick start](#1-quick-start)
+2. [Configuration](#2-configuration)
+3. [Running locally](#3-running-locally)
+4. [MCP integration](#4-mcp-integration)
+5. [Docker workflow](#5-docker-workflow)
+6. [Directory watcher](#6-directory-watcher)
+7. [Extending the system](#7-extending-the-system)
+8. [Troubleshooting](#8-troubleshooting)
+9. [License](#9-license)
 
 ---
 
-## License
+## 1. Quick start
 
-MIT License © 2025 The Project Contributors
+### Prerequisites
 
-## Docker image size
+- Python 3.11+
+- Node.js 20+
+- Docker (optional)
+- System libraries required by PyMuPDF / Docling (`libgl1`, `libglib2.0-0`, ...)
 
-The CI publishes a build to GitHub Container Registry at `ghcr.io/tekgnosis-net/pdf-rag-mcp:latest`.
-To check the image size locally run:
-
-```bash
-docker image inspect ghcr.io/tekgnosis-net/pdf-rag-mcp:latest --format='{{.Size}}'
-```
-
-Or list images:
+### Backend setup
 
 ```bash
-docker images | grep tekgnosis-net/pdf-rag-mcp
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-## Environment variables available to Docker / docker-compose
+### Frontend build
 
-Below are the environment variables recognized by the service (with defaults where applicable). Use `.env` or `docker-compose.yml` to set them.
+```bash
+cd src/frontend
+npm install
+npm run build  # produces frontend/dist used by the backend
+```
 
-- PDF_PARSER (default: `pymupdf`) — parser backend: `pymupdf` or `docling`.
-- EMBEDDING_BACKEND (default: `local`) — `local` (sentence-transformers) or `openai` (remote API).
-- SENTENCE_TRANSFORMER_MODEL (default: `sentence-transformers/all-MiniLM-L6-v2`) — model for local embeddings.
-- EMBEDDING_DEVICE (default: `cpu`) — `cpu` or `cuda`. When `cuda`, entrypoint installs CUDA wheels from `TORCH_CUDA_INDEX_URL`.
-- EMBEDDING_DIMENSION (default: `0`) — override embedding vector size when necessary.
-- OPENAI_BASE_URL (default: `https://api.openai.com/v1`) — base URL for OpenAI-style API.
-- OPENAI_API_KEY — API key for remote embedding provider (no default; keep secret).
-- OPENAI_MODEL (default: `text-embedding-3-large`) — remote embedding model name.
-- TORCH_CUDA_INDEX_URL (default: `https://download.pytorch.org/whl/cu124`) — CUDA wheel index used for runtime upgrade.
-- TORCH_CUDA_PACKAGES (default: `torch torchvision torchaudio`) — packages to install from CUDA index when enabling GPU.
-- DATABASE_URL (default: `sqlite:///data/markdown.db`) — SQLite DB URL for storing markdown exports.
-- VECTOR_STORE_PATH (default: `data/vector_store`) — filesystem path for LanceDB/vector store.
-- DATA_DIR (default: `data`) — base directory for runtime data. The watcher creates `<DATA_DIR>/pdfs` for drop-in ingestion and other storage paths resolve relative to this location.
-- FRONTEND_DIST_PATH (default: `frontend/dist`) — path to built frontend assets served by FastAPI.
-- LOG_LEVEL (default: `INFO`) — logging verbosity.
+### Project layout
 
-Watcher-specific variables (optional):
-- WATCH_ENABLED (default: `true`) — enable polling watcher that processes PDFs placed into `WATCH_DIR`.
-- WATCH_DIR (default: `${DATA_DIR}/pdfs`) — directory to watch for incoming PDFs.
-- WATCH_POLL_INTERVAL (default: `10`) — watcher polling interval in seconds.
-- MAX_PROCESS_ATTEMPTS (default: `10`) — maximum attempts before a file is blacklisted.
+```
+src/
+  backend/
+    api.py           # FastAPI app with REST + MCP routes
+    processor.py     # Orchestrates parsing, embeddings, persistence
+    mcp_server.py    # Reusable MCP server helpers
+    parsers/         # PyMuPDF and Docling adapters
+    embeddings/      # Embedding manager (local/OpenAI)
+    storage/         # SQLite markdown repo + LanceDB vector store
+  frontend/
+    src/             # React + Chakra UI SPA
+    package.json
+```
 
-Notes:
-- Keep `OPENAI_API_KEY` out of source control and use GitHub Secrets for CI/publishing.
-- `docker-compose.yml` shipped in this repo references the GHCR image by default and reads variables from `.env`.
+---
 
-### Directory watcher defaults
+## 2. Configuration
 
-When `WATCH_ENABLED=true` (the default), the backend starts a lightweight polling watcher as soon as the API boots. It scans `WATCH_DIR` (default `<DATA_DIR>/pdfs`) every `WATCH_POLL_INTERVAL` seconds and automatically sends new `.pdf` files through the processing pipeline. Successful ingests remove any previous failure records; repeated failures are tracked and the file is blacklisted after `MAX_PROCESS_ATTEMPTS` attempts.
+All settings flow through environment variables (see `.env.sample`). Configure them via shell exports, `.env`, or `docker-compose.yml`.
 
-To customize the drop folder in Docker:
+### Core variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PDF_PARSER` | `pymupdf` | PDF parser (`pymupdf` or `docling`). |
+| `EMBEDDING_BACKEND` | `local` | `local` for sentence-transformers, `openai` for API-based embeddings. |
+| `SENTENCE_TRANSFORMER_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Local embedding model. |
+| `EMBEDDING_DEVICE` | `cpu` | Target device (`cpu` or `cuda`). When `cuda`, CUDA wheels are installed at runtime. |
+| `EMBEDDING_DIMENSION` | `0` | Override embedding size; set when the chosen model differs from the default. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Base URL for OpenAI-compatible embedding APIs. |
+| `OPENAI_MODEL` | `text-embedding-3-large` | Remote embedding model name. |
+| `OPENAI_API_KEY` | – | API key for remote embeddings (keep secret). |
+| `TORCH_CUDA_INDEX_URL` | `https://download.pytorch.org/whl/cu124` | CUDA wheel index for runtime upgrades. |
+| `TORCH_CUDA_PACKAGES` | `torch torchvision torchaudio` | Packages installed from the CUDA index when enabling GPU. |
+| `DATABASE_URL` | `sqlite:///data/markdown.db` | SQLite database storing parsed markdown. |
+| `VECTOR_STORE_PATH` | `data/vector_store` | LanceDB directory for embeddings. |
+| `DATA_DIR` | `data` | Base directory for runtime data. The watcher watches `<DATA_DIR>/pdfs` by default. |
+| `FRONTEND_DIST_PATH` | `frontend/dist` | Location of built frontend assets served by FastAPI. |
+| `LOG_LEVEL` | `INFO` | Logging verbosity. |
+
+### Directory watcher variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `WATCH_ENABLED` | `true` | Start the polling watcher when the API boots. |
+| `WATCH_DIR` | `${DATA_DIR}/pdfs` | Folder monitored for incoming PDFs. |
+| `WATCH_POLL_INTERVAL` | `10` | Polling interval in seconds. |
+| `MAX_PROCESS_ATTEMPTS` | `10` | Maximum failed attempts before a file is blacklisted. |
+
+> **Tip:** keep `OPENAI_API_KEY` out of source control. Use secrets in CI/CD and `.env` locally.
+
+---
+
+## 3. Running locally
+
+### Backend API
+
+```bash
+uvicorn src.backend.api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Frontend with hot reload
+
+```bash
+cd src/frontend
+npm run dev
+```
+
+Visit <http://localhost:5173> for the Vite dev server. Without `npm run dev`, the FastAPI app serves the built assets from `frontend/dist`.
+
+---
+
+## 4. MCP integration
+
+The REST and MCP transports share the same FastAPI instance (`:8000`).
+
+**Endpoints**
+
+- `GET /.well-known/mcp/server` — discovery metadata.
+- `POST /mcp/tools/query_pdfs` — semantic search (`{"query": "...", "top_k": 5}`).
+- `POST /mcp/tools/fetch_markdown` — fetch markdown by ID/title.
+
+**Example payloads**
+
+```json
+// POST /mcp/tools/query_pdfs
+{
+  "query": "Summarize safety requirements",
+  "top_k": 5
+}
+```
+
+```json
+// POST /mcp/tools/fetch_markdown
+{
+  "document_id": 12
+}
+```
+
+**Client snippets**
+
+Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "pdf-rag": {
+      "type": "http",
+      "url": "http://localhost:8000"
+    }
+  }
+}
+```
+
+Cursor (`cursor.json`):
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "pdf-rag",
+      "type": "http",
+      "url": "http://localhost:8000",
+      "tools": ["query_pdfs", "fetch_markdown"]
+    }
+  ]
+}
+```
+
+---
+
+## 5. Docker workflow
+
+```bash
+# Recommended: use the published GHCR image
+docker run --rm -p 8000:8000 \
+  -e PDF_PARSER=docling \
+  ghcr.io/tekgnosis-net/pdf-rag-mcp:latest
+
+# Build locally if needed
+docker build -t pdf-rag-mcp .
+docker run --rm -p 8000:8000 pdf-rag-mcp
+
+# Compose (uses GHCR image by default)
+docker compose up --build
+```
+
+### GPU toggle
+
+Set `EMBEDDING_DEVICE=cuda` to trigger a runtime upgrade of PyTorch (and packages listed in `TORCH_CUDA_PACKAGES`) from `TORCH_CUDA_INDEX_URL`. With the NVIDIA Container Toolkit installed you can enable GPUs in Compose by uncommenting the provided stanza or with:
+
+```bash
+docker run --rm --gpus all -p 8000:8000 -e EMBEDDING_DEVICE=cuda ghcr.io/tekgnosis-net/pdf-rag-mcp:latest
+```
+
+### Persistent data & watcher mapping
 
 ```yaml
 services:
   app:
+    image: ghcr.io/tekgnosis-net/pdf-rag-mcp:latest
     volumes:
-      - ./pdfs:/app/data/pdfs  # maps a host directory into the default WATCH_DIR
+      - ./data:/app/data            # persists DB + vectors
+      - ./pdfs:/app/data/pdfs       # exposes the default WATCH_DIR
+    env_file: .env
+```
+
+### Docker image size
+
+```bash
+docker image inspect ghcr.io/tekgnosis-net/pdf-rag-mcp:latest --format='{{.Size}}'
+# or
+docker images | grep tekgnosis-net/pdf-rag-mcp
+```
+
+---
+
+## 6. Directory watcher
+
+- Enabled by default (`WATCH_ENABLED=true`).
+- Polls `WATCH_DIR` (default `<DATA_DIR>/pdfs`) every `WATCH_POLL_INTERVAL` seconds.
+- Each file is processed once; existing entries in the Markdown repository are skipped.
+- Failures are tracked in SQLite. After `MAX_PROCESS_ATTEMPTS` the file is blacklisted.
+- Successful ingests clear the failure counter.
+
+Customize the watcher via environment variables or Compose overrides:
+
+```yaml
+services:
+  app:
     environment:
-      - WATCH_DIR=/app/data/pdfs
+      - WATCH_DIR=/app/data/incoming
       - WATCH_POLL_INTERVAL=15
       - MAX_PROCESS_ATTEMPTS=5
 ```
 
-Or set the same variables in `.env` alongside `DATA_DIR` if you want the entire data tree relocated (for example `DATA_DIR=/var/lib/pdf-rag` will cause the watcher to monitor `/var/lib/pdf-rag/pdfs`).
+When `DATA_DIR` is moved (e.g. `DATA_DIR=/var/lib/pdf-rag`), the watcher automatically watches `/var/lib/pdf-rag/pdfs` unless `WATCH_DIR` is explicitly set.
+
+---
+
+## 7. Extending the system
+
+- **Custom parsers:** implement `BasePDFParser` and register it with `PDFProcessor`.
+- **Chunking strategies:** replace `EmbeddingManager.chunk_markdown` for domain-specific segments.
+- **LLM augmentations:** add REST/MCP endpoints that use stored markdown + embeddings.
+
+---
+
+## 8. Troubleshooting
+
+| Symptom | Suggested fix |
+| --- | --- |
+| PyMuPDF import errors | Confirm required system libraries are installed (see `Dockerfile`). |
+| Docling OCR issues | Ensure models download successfully and disk space is available. |
+| Empty search results | Check logs for embedding creation and ensure LanceDB contains vectors (`data/vector_store`). |
+| OpenAI/remote errors | Verify `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`. |
+
+---
+
+## 9. License
+
+MIT License © 2025 The Project Contributors
