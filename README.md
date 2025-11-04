@@ -237,7 +237,7 @@ Below are the environment variables recognized by the service (with defaults whe
 - TORCH_CUDA_PACKAGES (default: `torch torchvision torchaudio`) — packages to install from CUDA index when enabling GPU.
 - DATABASE_URL (default: `sqlite:///data/markdown.db`) — SQLite DB URL for storing markdown exports.
 - VECTOR_STORE_PATH (default: `data/vector_store`) — filesystem path for LanceDB/vector store.
-- DATA_DIR (default: `data`) — base directory for runtime data (uploads, pdfs, DB, vector store).
+- DATA_DIR (default: `data`) — base directory for runtime data. The watcher creates `<DATA_DIR>/pdfs` for drop-in ingestion and other storage paths resolve relative to this location.
 - FRONTEND_DIST_PATH (default: `frontend/dist`) — path to built frontend assets served by FastAPI.
 - LOG_LEVEL (default: `INFO`) — logging verbosity.
 
@@ -250,3 +250,22 @@ Watcher-specific variables (optional):
 Notes:
 - Keep `OPENAI_API_KEY` out of source control and use GitHub Secrets for CI/publishing.
 - `docker-compose.yml` shipped in this repo references the GHCR image by default and reads variables from `.env`.
+
+### Directory watcher defaults
+
+When `WATCH_ENABLED=true` (the default), the backend starts a lightweight polling watcher as soon as the API boots. It scans `WATCH_DIR` (default `<DATA_DIR>/pdfs`) every `WATCH_POLL_INTERVAL` seconds and automatically sends new `.pdf` files through the processing pipeline. Successful ingests remove any previous failure records; repeated failures are tracked and the file is blacklisted after `MAX_PROCESS_ATTEMPTS` attempts.
+
+To customize the drop folder in Docker:
+
+```yaml
+services:
+  app:
+    volumes:
+      - ./pdfs:/app/data/pdfs  # maps a host directory into the default WATCH_DIR
+    environment:
+      - WATCH_DIR=/app/data/pdfs
+      - WATCH_POLL_INTERVAL=15
+      - MAX_PROCESS_ATTEMPTS=5
+```
+
+Or set the same variables in `.env` alongside `DATA_DIR` if you want the entire data tree relocated (for example `DATA_DIR=/var/lib/pdf-rag` will cause the watcher to monitor `/var/lib/pdf-rag/pdfs`).
