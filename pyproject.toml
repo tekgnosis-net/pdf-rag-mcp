@@ -3,5 +3,4 @@ line-length = 88
 target-version = "py311"
 exclude = ["src/frontend", "node_modules", "frontend/dist"]
 
-[tool.ruff.format]
-extend-ignore = []
+
