@@ -35,10 +35,12 @@ class Settings:
     def ensure_directories(self) -> None:
         """Create expected data directories on disk."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
-    # create watch directory for incoming PDFs
-    self.watch_dir.mkdir(parents=True, exist_ok=True)
+        # create watch directory for incoming PDFs
+        self.watch_dir.mkdir(parents=True, exist_ok=True)
+
         vector_dir = Path(self.vector_store_path).expanduser().resolve().parent
         vector_dir.mkdir(parents=True, exist_ok=True)
+
         if self.database_url.startswith("sqlite"):
             db_path = self.database_url.replace("sqlite:///", "")
             Path(db_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
