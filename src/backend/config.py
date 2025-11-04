@@ -26,10 +26,17 @@ class Settings:
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     data_dir: Path = field(default_factory=lambda: Path(os.getenv("DATA_DIR", "data")))
     frontend_dist: Path = field(default_factory=lambda: Path(os.getenv("FRONTEND_DIST_PATH", "frontend/dist")))
+    # Directory watcher settings
+    watch_enabled: bool = field(default_factory=lambda: os.getenv("WATCH_ENABLED", "true").lower() in ("1", "true", "yes"))
+    watch_dir: Path = field(default_factory=lambda: Path(os.getenv("WATCH_DIR", os.getenv("DATA_DIR", "data")) ) / "pdfs")
+    watch_poll_interval: int = field(default_factory=lambda: int(os.getenv("WATCH_POLL_INTERVAL", "10")))
+    max_process_attempts: int = field(default_factory=lambda: int(os.getenv("MAX_PROCESS_ATTEMPTS", "10")))
 
     def ensure_directories(self) -> None:
         """Create expected data directories on disk."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
+    # create watch directory for incoming PDFs
+    self.watch_dir.mkdir(parents=True, exist_ok=True)
         vector_dir = Path(self.vector_store_path).expanduser().resolve().parent
         vector_dir.mkdir(parents=True, exist_ok=True)
         if self.database_url.startswith("sqlite"):

@@ -3,6 +3,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
+import threading
+import time
+from dataclasses import dataclass
 
 from .config import Settings
 from .embeddings import EmbeddingManager
@@ -26,6 +29,10 @@ class PDFProcessor:
         self.embedding_manager = EmbeddingManager(self.settings)
         embedding_dim = self.settings.embedding_dimension or None
         self.vector_store = VectorStore(self.settings.vector_store_path, embedding_dim)
+        # start directory watcher (daemon) if enabled
+        if self.settings.watch_enabled:
+            watcher = DirectoryWatcher(self, self.markdown_repository, self.settings)
+            watcher.start()
 
     def _create_parser(self, backend: str) -> BasePDFParser:
         backend = backend.lower()
@@ -83,3 +90,80 @@ class PDFProcessor:
     def fetch_markdown_by_title(self, title: str) -> Optional[str]:
         record = self.markdown_repository.get_by_title(title)
         return record.markdown if record else None
+
+
+@dataclass
+class DirectoryWatcher:
+    """Simple polling directory watcher that attempts to process unprocessed PDFs.
+
+    - Watches `settings.watch_dir` for new/changed PDFs.
+    - Skips files already in the MarkdownRepository (by source_path).
+    - Tracks failures in `failed_files` table and blacklists after configured attempts.
+    """
+
+    processor: PDFProcessor
+    markdown_repo: MarkdownRepository
+    settings: Settings
+    _thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True, name="pdf-watcher")
+        self._thread.start()
+        LOGGER.info("Started DirectoryWatcher on %s", self.settings.watch_dir)
+
+    def _run(self) -> None:
+        poll = max(1, int(self.settings.watch_poll_interval))
+        while True:
+            try:
+                self._scan_once()
+            except Exception:  # pragma: no cover - defensive loop
+                LOGGER.exception("DirectoryWatcher encountered an error")
+            time.sleep(poll)
+
+    def _scan_once(self) -> None:
+        watch_dir = Path(self.settings.watch_dir)
+        if not watch_dir.exists():
+            return
+        for path in watch_dir.iterdir():
+            if not path.is_file():
+                continue
+            if not path.name.lower().endswith(".pdf"):
+                continue
+            # skip if we already have a record for this source path
+            try:
+                existing = self.markdown_repo.get_by_source_path(str(path))
+            except Exception:  # pragma: no cover - defensive db issue
+                LOGGER.exception("Failed to query repository for %s", path)
+                existing = None
+            if existing:
+                continue
+            # skip if blacklisted
+            try:
+                if self.markdown_repo.is_blacklisted(str(path)):
+                    LOGGER.debug("Skipping blacklisted file %s", path)
+                    continue
+            except Exception:
+                LOGGER.exception("Failed to check blacklist for %s", path)
+
+            # Attempt processing
+            LOGGER.info("Watcher: attempting to process %s", path)
+            try:
+                record = self.processor.process_pdf(path, title=path.stem)
+                # success: clear any failure state
+                try:
+                    self.markdown_repo.clear_failures(str(path))
+                except Exception:
+                    LOGGER.exception("Failed to clear failure state for %s", path)
+                LOGGER.info("Watcher: successfully processed %s -> id=%s", path, record.id)
+            except Exception as exc:  # pragma: no cover - runtime failure handling
+                LOGGER.exception("Watcher: processing %s failed", path)
+                try:
+                    info = self.markdown_repo.record_failure(str(path), str(exc), self.settings.max_process_attempts)
+                    if info.get("blacklisted"):
+                        LOGGER.warning("File %s blacklisted after %s attempts", path, info.get("attempts"))
+                    else:
+                        LOGGER.info("Recorded failure for %s (attempt %s)", path, info.get("attempts"))
+                except Exception:
+                    LOGGER.exception("Watcher: failed to record failure for %s", path)

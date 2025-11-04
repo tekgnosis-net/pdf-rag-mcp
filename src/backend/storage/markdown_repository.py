@@ -54,6 +54,18 @@ class MarkdownRepository:
                 )
                 """
             )
+            # Track failed processing attempts and blacklist status
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS failed_files (
+                    source_path TEXT PRIMARY KEY,
+                    attempts INTEGER NOT NULL,
+                    last_error TEXT,
+                    blacklisted INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def save(self, title: str, source_path: Path, markdown: str) -> MarkdownRecord:
@@ -95,6 +107,58 @@ class MarkdownRepository:
                 markdown=row["markdown"],
                 created_at=dt.datetime.fromisoformat(row["created_at"]),
             )
+
+    def get_by_source_path(self, source_path: str) -> Optional[MarkdownRecord]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM documents WHERE source_path = ?", (str(source_path),)).fetchone()
+            if not row:
+                return None
+            return MarkdownRecord(
+                id=row["id"],
+                title=row["title"],
+                source_path=row["source_path"],
+                markdown=row["markdown"],
+                created_at=dt.datetime.fromisoformat(row["created_at"]),
+            )
+
+    def record_failure(self, source_path: str, error: str, max_attempts: int) -> dict:
+        """Increment failure counter for a file and mark blacklisted if attempts exceed max_attempts.
+
+        Returns a dict with attempts and blacklisted status.
+        """
+        now = dt.datetime.utcnow().replace(tzinfo=dt.timezone.utc).isoformat()
+        with self._connect() as conn:
+            row = conn.execute("SELECT attempts, blacklisted FROM failed_files WHERE source_path = ?", (str(source_path),)).fetchone()
+            if not row:
+                attempts = 1
+                blacklisted = 0
+                conn.execute(
+                    "INSERT INTO failed_files (source_path, attempts, last_error, blacklisted, updated_at) VALUES (?, ?, ?, ?, ?)",
+                    (str(source_path), attempts, error, blacklisted, now),
+                )
+            else:
+                attempts = int(row["attempts"]) + 1
+                blacklisted = int(row["blacklisted"])
+                if attempts >= max_attempts:
+                    blacklisted = 1
+                conn.execute(
+                    "UPDATE failed_files SET attempts = ?, last_error = ?, blacklisted = ?, updated_at = ? WHERE source_path = ?",
+                    (attempts, error, blacklisted, now, str(source_path)),
+                )
+            conn.commit()
+        return {"attempts": attempts, "blacklisted": bool(blacklisted)}
+
+    def clear_failures(self, source_path: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM failed_files WHERE source_path = ?", (str(source_path),))
+            conn.commit()
+
+    def is_blacklisted(self, source_path: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute("SELECT blacklisted FROM failed_files WHERE source_path = ?", (str(source_path),)).fetchone()
+            if not row:
+                return False
+            return bool(row["blacklisted"]) 
 
     def list_all(self) -> list[MarkdownRecord]:
         with self._connect() as conn:

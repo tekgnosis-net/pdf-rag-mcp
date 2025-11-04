@@ -156,9 +156,16 @@ Key endpoints:
 Build and run the containerized stack:
 
 ```bash
+# Use the published GHCR image (recommended)
+docker run --rm -p 8000:8000 \
+  -e PDF_PARSER=docling \
+  ghcr.io/tekgnosis-net/pdf-rag-mcp:latest
+
+# Or build and run locally
 docker build -t pdf-rag-mcp .
 docker run --rm -p 8000:8000 -e PDF_PARSER=docling pdf-rag-mcp
-# or use docker compose for the full stack with persistent data volume
+
+# Docker Compose (uses GHCR image by default in `docker-compose.yml`)
 docker compose up --build
 ```
 
@@ -198,3 +205,48 @@ Mount `data/` as a volume if you want persistent storage across container restar
 ## License
 
 MIT License © 2025 The Project Contributors
+
+## Docker image size
+
+The CI publishes a build to GitHub Container Registry at `ghcr.io/tekgnosis-net/pdf-rag-mcp:latest`.
+To check the image size locally run:
+
+```bash
+docker image inspect ghcr.io/tekgnosis-net/pdf-rag-mcp:latest --format='{{.Size}}'
+```
+
+Or list images:
+
+```bash
+docker images | grep tekgnosis-net/pdf-rag-mcp
+```
+
+## Environment variables available to Docker / docker-compose
+
+Below are the environment variables recognized by the service (with defaults where applicable). Use `.env` or `docker-compose.yml` to set them.
+
+- PDF_PARSER (default: `pymupdf`) — parser backend: `pymupdf` or `docling`.
+- EMBEDDING_BACKEND (default: `local`) — `local` (sentence-transformers) or `openai` (remote API).
+- SENTENCE_TRANSFORMER_MODEL (default: `sentence-transformers/all-MiniLM-L6-v2`) — model for local embeddings.
+- EMBEDDING_DEVICE (default: `cpu`) — `cpu` or `cuda`. When `cuda`, entrypoint installs CUDA wheels from `TORCH_CUDA_INDEX_URL`.
+- EMBEDDING_DIMENSION (default: `0`) — override embedding vector size when necessary.
+- OPENAI_BASE_URL (default: `https://api.openai.com/v1`) — base URL for OpenAI-style API.
+- OPENAI_API_KEY — API key for remote embedding provider (no default; keep secret).
+- OPENAI_MODEL (default: `text-embedding-3-large`) — remote embedding model name.
+- TORCH_CUDA_INDEX_URL (default: `https://download.pytorch.org/whl/cu124`) — CUDA wheel index used for runtime upgrade.
+- TORCH_CUDA_PACKAGES (default: `torch torchvision torchaudio`) — packages to install from CUDA index when enabling GPU.
+- DATABASE_URL (default: `sqlite:///data/markdown.db`) — SQLite DB URL for storing markdown exports.
+- VECTOR_STORE_PATH (default: `data/vector_store`) — filesystem path for LanceDB/vector store.
+- DATA_DIR (default: `data`) — base directory for runtime data (uploads, pdfs, DB, vector store).
+- FRONTEND_DIST_PATH (default: `frontend/dist`) — path to built frontend assets served by FastAPI.
+- LOG_LEVEL (default: `INFO`) — logging verbosity.
+
+Watcher-specific variables (optional):
+- WATCH_ENABLED (default: `true`) — enable polling watcher that processes PDFs placed into `WATCH_DIR`.
+- WATCH_DIR (default: `${DATA_DIR}/pdfs`) — directory to watch for incoming PDFs.
+- WATCH_POLL_INTERVAL (default: `10`) — watcher polling interval in seconds.
+- MAX_PROCESS_ATTEMPTS (default: `10`) — maximum attempts before a file is blacklisted.
+
+Notes:
+- Keep `OPENAI_API_KEY` out of source control and use GitHub Secrets for CI/publishing.
+- `docker-compose.yml` shipped in this repo references the GHCR image by default and reads variables from `.env`.
