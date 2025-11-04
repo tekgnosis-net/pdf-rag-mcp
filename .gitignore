@@ -1,0 +1,38 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.venv/
+.env
+.env.*
+
+# Node/Vite artifacts
+node_modules/
+src/frontend/node_modules/
+src/frontend/dist/
+frontend/dist/
+pnpm-lock.yaml
+yarn.lock
+
+# Data and storage
+/data/
+data/
+!data/.gitkeep
+*.db
+*.lance*
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local tooling
+COPILOT_INSTRUCTIONS.local.md
+.github/copilot-instructions.md
+.idea/
+.vscode/
+
+# Logs
+*.log
+logs/

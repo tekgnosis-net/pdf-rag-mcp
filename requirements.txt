@@ -1,0 +1,11 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pymupdf>=1.24.8
+docling>=1.0.0
+sentence-transformers>=3.0.1
+openai>=1.43.0
+lancedb>=0.7.9
+pyarrow>=17.0.0
+python-multipart>=0.0.9
+numpy>=1.26.4
+pytest>=7.0.0
