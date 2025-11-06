@@ -18,4 +18,5 @@ def test_health_endpoint():
     resp = client.get("/api/health")
     assert resp.status_code == 200
     payload = resp.json()
-    assert payload == {"status": "ok"}
+    assert payload.get("status") == "ok"
+    assert isinstance(payload.get("version"), str)
