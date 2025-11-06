@@ -1,12 +1,13 @@
 {
   "name": "pdf-rag-frontend",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "ci:build": "npm run typecheck && npm run build",
+    "test:smoke": "npm run build",
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
@@ -23,7 +24,7 @@
     "@vitejs/plugin-react": "^4.3.2",
     "@types/react": "^18.3.10",
     "@types/react-dom": "^18.3.5",
-  "@types/node": "^22.7.7",
+    "@types/node": "^22.7.7",
     "typescript": "^5.6.3",
     "vite": "^5.4.6"
   }

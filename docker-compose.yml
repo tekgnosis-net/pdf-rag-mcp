@@ -1,11 +1,14 @@
 services:
-  app:
+  pdf-rag-mcp:
     image: ghcr.io/tekgnosis-net/pdf-rag-mcp:latest
+    pull_policy: always
+    container_name: pdf-rag-mcp
     env_file: .env
     ports:
-      - "9001:8000"
+      - "9052:8000"
     volumes:
       - ./data:/app/data
+      - /home/kumar/develop/3gpp-downloader/downloads/By-Release:/app/data/pdfs
     environment:
       - EMBEDDING_DEVICE=${EMBEDDING_DEVICE:-cpu}
       - TORCH_CUDA_INDEX_URL=${TORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu124}

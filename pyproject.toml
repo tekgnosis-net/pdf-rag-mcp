@@ -1,3 +1,9 @@
+[project]
+name = "pdf-rag-mcp"
+version = "1.0.0"
+description = "PDF RAG MCP Server"
+requires-python = ">=3.11"
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"

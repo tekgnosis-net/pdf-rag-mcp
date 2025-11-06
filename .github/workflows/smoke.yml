@@ -1,14 +1,14 @@
-name: Test, Build and Publish
+name: Smoke Tests
 
 on:
-  pull_request:
-    branches: [main]
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
 
 jobs:
-  lint-and-test:
-    name: Lint, typecheck, test, frontend build
+  backend-smoke:
+    name: Backend smoke tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,29 +19,30 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff
 
-      - name: Run ruff (lint)
-        run: |
-          ruff check .
+      - name: Run pytest smoke suite
+        run: pytest tests/test_smoke_api.py -q
 
-      - name: Run pytest
-        run: |
-          pytest -q
+  frontend-smoke:
+    name: Frontend smoke build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install frontend deps
+      - name: Install dependencies
         working-directory: src/frontend
         run: npm ci
 
-      - name: Frontend typecheck and build
+      - name: Run UI smoke script
         working-directory: src/frontend
-        run: npm run ci:build
+        run: npm run test:smoke

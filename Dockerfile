@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
 
+ARG APP_VERSION=0.0.0-development
+
 FROM node:20-slim AS frontend-builder
+ARG APP_VERSION
+ENV APP_VERSION=${APP_VERSION}
 WORKDIR /app/frontend
 COPY src/frontend/package*.json ./
 RUN npm install
@@ -8,9 +12,11 @@ COPY src/frontend ./
 RUN npm run build
 
 FROM python:3.11-slim AS runtime
+ARG APP_VERSION
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
+    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124 \
+    APP_VERSION=${APP_VERSION}
 WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential libgl1 libglib2.0-0 curl \

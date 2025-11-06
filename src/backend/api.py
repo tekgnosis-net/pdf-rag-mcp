@@ -151,7 +151,7 @@ def create_api(settings: Optional[Settings] = None) -> FastAPI:
     processor = PDFProcessor(config)
     manager = ProcessingManager(processor, config)
 
-    app = FastAPI(title="PDF RAG MCP API", version="0.1.0")
+    app = FastAPI(title="PDF RAG MCP API", version=config.app_version)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -162,7 +162,11 @@ def create_api(settings: Optional[Settings] = None) -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> Dict[str, str]:
-        return {"status": "ok"}
+        return {"status": "ok", "version": config.app_version}
+
+    @app.get("/api/meta")
+    async def meta() -> Dict[str, str]:
+        return {"version": config.app_version}
 
     @app.post("/api/process")
     async def upload_pdfs(background_tasks: BackgroundTasks, files: List[UploadFile] = File(...)) -> Dict[str, List[Dict[str, object]]]:
